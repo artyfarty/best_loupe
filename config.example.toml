@@ -1,0 +1,17 @@
+# best_loupe config. Lives at %APPDATA%\best_loupe\config.toml (created with defaults on first run).
+# Restart best_loupe after editing. Out-of-range values are clamped.
+
+lens_width = 640            # lens size, physical pixels
+lens_height = 400
+corner_radius = 18.0        # >= half the smaller side gives a circle / capsule
+border_width = 2.0          # 0 disables the border
+border_color = 0x9aa0a6     # 0xRRGGBB
+shadow_size = 14.0          # soft drop shadow, 0 disables
+initial_zoom = 2.0          # zoom on first activation (later activations reuse the last zoom)
+min_zoom = 1.25
+max_zoom = 16.0
+zoom_step = 1.25            # multiplier per wheel notch
+zoom_smoothing_ms = 45.0    # zoom animation time constant, 0 = instant
+fade_in_ms = 40.0           # 0 = instant
+activation_delay_ms = 90    # hold Ctrl+Alt this long before showing; a wheel event shows immediately
+smoothing = true            # bilinear filtering; false = crisp nearest-neighbour pixels

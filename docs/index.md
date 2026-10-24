@@ -4,6 +4,10 @@ This is the index of project documentation. Read the relevant doc here **before*
 
 | Document | What it covers |
 | --- | --- |
+| [../README.md](../README.md) / [../CHANGELOG.md](../CHANGELOG.md) | Overview, install, release history. |
+| [design.md](design.md) | Architecture of the lens: UX, threads, render pipeline, error handling, config, roadmap. |
+| [build.md](build.md) | Building on the Windows host from WSL, dependency pinning policy. |
+| [deploy.md](deploy.md) | Signed uiAccess build: cert, signing, Program Files install, interactive launch, autostart, rollout log. |
 | [research-approaches.md](research-approaches.md) | Survey of magnifier approaches (capture+overlay, Mag API, DWM injection), gotchas, existing tools, chosen architecture. |
 
 ## Conventions

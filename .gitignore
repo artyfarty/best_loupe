@@ -21,3 +21,7 @@ build/
 out/
 *.pfx
 *.p12
+
+# Rust
+target/
+.build-describe
