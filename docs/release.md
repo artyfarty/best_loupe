@@ -24,6 +24,9 @@ Third-party actions are pinned to commit SHAs (checked to be ≥ 3 days old, lik
 1. Bump `version` in `Cargo.toml`, add a `## vX.Y.Z — date` section to `CHANGELOG.md`, update docs.
 2. Commit, `git tag -a vX.Y.Z -m "best_loupe vX.Y.Z"`.
 3. Push commit + tag to `origin` (Gitea) and `github` (YubiKey touch). CI publishes the release.
+   If no run appears for the tag (happened on the very first push of `main` + tag into the empty
+   GitHub repo: only the branch got a push event), re-push the tag:
+   `git push github :refs/tags/vX.Y.Z && git push github vX.Y.Z`.
 
 Locally, `scripts/win-installer.sh` builds the same installer on the Windows host (Inno Setup 6
 per-user install expected at `%LOCALAPPDATA%\Programs\InnoSetup6`, or `ISCC=` override).
