@@ -1,0 +1,23 @@
+# Local Claude state that should never be committed
+.claude/settings.local.json
+
+# Secrets / local config overrides
+*.local.yaml
+*.local.yml
+*.local.toml
+.env
+.env.*
+secrets.*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Build output / signing material
+build/
+out/
+*.pfx
+*.p12
