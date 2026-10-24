@@ -2,7 +2,7 @@
 
 Fast macOS-style hold-to-zoom lens magnifier for Windows (D3D11 + Desktop Duplication)
 
-> **Visibility:** Undecided
+> **Visibility:** Public
 
 ## Directives
 
@@ -14,14 +14,15 @@ Fast macOS-style hold-to-zoom lens magnifier for Windows (D3D11 + Desktop Duplic
 ## Project notes
 
 - Rust + `windows` crate; Win32/D3D11/DXGI/DirectComposition. Architecture: `docs/design.md`.
-- Build/run on the Windows host via `scripts/win-build.sh` / `scripts/win-run.sh` (see `docs/build.md`); signed uiAccess install via `scripts/deploy.sh local|<ssh-host>` (see `docs/deploy.md`).
+- Build/run on the Windows host via `scripts/win-build.sh` / `scripts/win-run.sh` (see `docs/build.md`); uiAccess install via `scripts/deploy.sh local|<ssh-host>` (see `docs/deploy.md`); releases are built and published by GitHub Actions from tags; local installer build via `scripts/win-installer.sh` (see `docs/release.md`).
 - Dependencies are pinned exactly and `Cargo.lock` is committed; check crate publish dates (>= 3 days) on every change.
 
 ## Versioning & releases
 
-- SemVer. A release = bump `version` in `Cargo.toml`, add a `CHANGELOG.md` section, commit, annotated tag `vX.Y.Z` on that commit, push commit + tag to Gitea. The agent manages versions itself: minor bump for features, patch for fixes (pre-1.0).
+- SemVer. A release = bump `version` in `Cargo.toml`, add a `CHANGELOG.md` section, commit, annotated tag `vX.Y.Z` on that commit, push commit + tag to Gitea and GitHub (CI publishes the release). The agent manages versions itself: minor bump for features, patch for fixes (pre-1.0).
 - The version is burned into the binary by `build.rs`: `CARGO_PKG_VERSION` → VERSIONINFO `FileVersion`; `git describe --tags --dirty` (passed via `.build-describe` by `scripts/win-build.sh`) → `ProductVersion`, `crate::BUILD`, log line. `build.rs` warns if the tag and `Cargo.toml` disagree.
 - Deploy released builds from a clean tagged tree so the binary reports exactly `vX.Y.Z`.
+- Remotes: `origin` = private Gitea (push freely with commits), `github` = public mirror `github.com/artyfarty/best_loupe` (push needs a YubiKey touch — only while the user is around, warn first). Releases (setup + portable exe) are published on GitHub by CI; the app's update check reads them.
 
 ## Sibling-project initialization
 
@@ -31,8 +32,8 @@ Fast macOS-style hold-to-zoom lens magnifier for Windows (D3D11 + Desktop Duplic
   - its own initialized git repository with a sensible `.gitignore`.
 - First decide and record the new project's visibility (private vs. public) and apply matching precautions — e.g. keep personal data and internal hostnames/IPs out of anything that may become public.
 
-## Visibility-undecided rules (private by default)
+## Public-project rules
 
-- Visibility is **not yet decided** — treat the repo as **private by default** and apply the standard precautions below.
-- **Never expose personal data** in code, comments, examples, commit messages, docs, or any committed file: IP addresses, hostnames, domain names of personal infra, API keys/tokens/passwords, asset/user IDs, GPS coordinates of real photos, or paths/filenames that reveal personal info. Store deployment-specific details in Claude memory (outside repo scope), not in project files.
-- Lives in private Gitea by default. **Publish to GitHub only on an explicit instruction** from the user — never on your own initiative.
+- This is a **public** project (mirrored to GitHub with public visibility).
+- **Never expose personal data** in code, comments, examples, commit messages, docs, or any committed file: IP addresses, hostnames, domain names of personal infra, API keys/tokens/passwords, asset/user IDs, GPS coordinates of real photos, or paths/filenames that reveal personal info. Store deployment-specific details in Claude memory (outside repo scope), not in project files. Use generic placeholders in examples.
+- A `LICENSE` file is present; keep it accurate. Treat everything committed as world-readable.

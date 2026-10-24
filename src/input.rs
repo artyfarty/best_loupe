@@ -1,4 +1,4 @@
-//! Global input: Ctrl+Alt chord tracking and wheel capture via low-level hooks.
+//! Global input: hotkey (modifier chord, Ctrl+Alt by default) tracking and wheel capture via low-level hooks.
 //!
 //! The keyboard hook is always installed. The mouse hook is installed only while the chord is held,
 //! so normal mouse input never pays for a hook round-trip. Hook procs only touch atomics and signal
@@ -18,13 +18,19 @@ const LCTRL: u32 = 1;
 const RCTRL: u32 = 2;
 const LALT: u32 = 4;
 const RALT: u32 = 8;
+const LSHIFT: u32 = 16;
+const RSHIFT: u32 = 32;
 const CTRL_MASK: u32 = LCTRL | RCTRL;
 const ALT_MASK: u32 = LALT | RALT;
+const SHIFT_MASK: u32 = LSHIFT | RSHIFT;
+const GROUPS: [u32; 3] = [CTRL_MASK, ALT_MASK, SHIFT_MASK];
 
 const MSG_MOUSE_HOOK_ON: u32 = WM_APP + 1;
 const MSG_MOUSE_HOOK_OFF: u32 = WM_APP + 2;
 
 static MODS: AtomicU32 = AtomicU32::new(0);
+/// Modifier groups (CTRL_MASK | ALT_MASK | SHIFT_MASK subsets) that make up the hotkey.
+static REQUIRED: AtomicU32 = AtomicU32::new(CTRL_MASK | ALT_MASK);
 /// Another key was pressed while the chord was held; cleared when Ctrl or Alt is fully released.
 static TAINTED: AtomicBool = AtomicBool::new(false);
 /// A wheel event arrived during the chord: skip the activation delay.
@@ -39,11 +45,30 @@ pub fn now_ms() -> u64 {
     START.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
+/// Every required modifier group has at least one key down.
 fn mods_held(m: u32) -> bool {
-    m & CTRL_MASK != 0 && m & ALT_MASK != 0
+    let req = REQUIRED.load(Acquire);
+    req != 0 && GROUPS.iter().all(|&g| req & g == 0 || m & g != 0)
 }
 
-/// Ctrl+Alt are both down and no other key was pressed since.
+pub fn apply_config(cfg: &crate::config::Config) {
+    let mut req = 0;
+    if cfg.hotkey_ctrl {
+        req |= CTRL_MASK;
+    }
+    if cfg.hotkey_alt {
+        req |= ALT_MASK;
+    }
+    if cfg.hotkey_shift {
+        req |= SHIFT_MASK;
+    }
+    let before = chord_held();
+    REQUIRED.store(req, Release);
+    TAINTED.store(false, Release);
+    on_chord_change(before);
+}
+
+/// The hotkey modifiers are all down and no other key was pressed since.
 pub fn chord_held() -> bool {
     mods_held(MODS.load(Acquire)) && !TAINTED.load(Acquire)
 }
@@ -101,11 +126,10 @@ pub fn verify_with_async_state() -> bool {
     let down = |vk: VIRTUAL_KEY| unsafe { GetAsyncKeyState(vk.0 as i32) } as u16 & 0x8000 != 0;
     let before = chord_held();
     let mut m = MODS.load(Acquire);
-    if !down(VK_CONTROL) {
-        m &= !CTRL_MASK;
-    }
-    if !down(VK_MENU) {
-        m &= !ALT_MASK;
+    for (vk, mask) in [(VK_CONTROL, CTRL_MASK), (VK_MENU, ALT_MASK), (VK_SHIFT, SHIFT_MASK)] {
+        if !down(vk) {
+            m &= !mask;
+        }
     }
     if !mods_held(m) {
         MODS.store(m, Release);
@@ -125,20 +149,23 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
             VK_RCONTROL => RCTRL,
             VK_LMENU => LALT,
             VK_RMENU => RALT,
+            VK_LSHIFT => LSHIFT,
+            VK_RSHIFT => RSHIFT,
             _ => 0,
         };
         let before = chord_held();
+        let required = REQUIRED.load(Acquire);
         if bit != 0 {
+            let held_before = mods_held(MODS.load(Acquire));
             let m = if down { MODS.fetch_or(bit, AcqRel) | bit } else { MODS.fetch_and(!bit, AcqRel) & !bit };
             if !mods_held(m) {
                 TAINTED.store(false, Release);
-            }
-        } else if down {
-            let vk = VIRTUAL_KEY(kb.vkCode as u16);
-            let is_shift = matches!(vk, VK_LSHIFT | VK_RSHIFT | VK_SHIFT);
-            if !is_shift && mods_held(MODS.load(Acquire)) {
+            } else if down && held_before && GROUPS.iter().any(|&g| g & bit != 0 && required & g == 0) {
+                // A modifier that is not part of the hotkey (e.g. Shift with Ctrl+Alt): a shortcut.
                 TAINTED.store(true, Release);
             }
+        } else if down && mods_held(MODS.load(Acquire)) {
+            TAINTED.store(true, Release);
         }
         on_chord_change(before);
     }

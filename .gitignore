@@ -25,3 +25,4 @@ out/
 # Rust
 target/
 .build-describe
+dist/

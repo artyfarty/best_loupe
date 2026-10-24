@@ -9,7 +9,7 @@ WIN_DIR_W="C:\\Users\\${WIN_USER}\\dev\\best_loupe"
 CARGO_W="C:\\Users\\${WIN_USER}\\.cargo\\bin\\cargo.exe"
 
 mkdir -p "$WIN_DIR"
-rsync -a --delete --exclude target --exclude .git --exclude .claude "$ROOT/" "$WIN_DIR/"
+rsync -a --delete --exclude target --exclude dist --exclude .git --exclude .claude "$ROOT/" "$WIN_DIR/"
 # The mirror has no .git: hand the version string to build.rs (burned into the exe).
 git -C "$ROOT" describe --tags --always --dirty > "$WIN_DIR/.build-describe" 2>/dev/null || rm -f "$WIN_DIR/.build-describe"
 [ $# -eq 0 ] && set -- build --release

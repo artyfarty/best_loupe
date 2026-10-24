@@ -6,16 +6,41 @@ overlay rendered by a shader).
 
 ## UX
 
-- Hold **Ctrl+Alt** → a rounded lens appears around the cursor and follows it.
+- Hold the hotkey (**Ctrl+Alt** by default; any non-empty combination of Ctrl / Alt / Shift) →
+  a rounded lens appears around the cursor and follows it. Win is deliberately not offered:
+  releasing it alone opens Start.
 - **Mouse wheel** while held → zoom in/out (multiplicative steps, smooth animation). The wheel
   event is swallowed so the app below does not scroll/zoom.
-- Release either key → lens disappears instantly.
-- Pressing any other (non-Shift) key while Ctrl+Alt is held "taints" the chord: the lens hides and
-  stays hidden until Ctrl or Alt is released. This keeps shortcuts like Ctrl+Alt+Del / Ctrl+Alt+T
-  from flashing the lens. A short activation delay (`activation_delay_ms`) further hides it from
-  fast shortcuts; a wheel event during the delay activates immediately.
+- Release any hotkey modifier → lens disappears instantly.
+- Pressing any other key — including a modifier that is not part of the hotkey (Shift with
+  Ctrl+Alt) — while the hotkey is held "taints" the chord: the lens hides and stays hidden until a
+  hotkey modifier is released. This keeps shortcuts like Ctrl+Alt+Del / Ctrl+Alt+T from flashing
+  the lens. A short activation delay (`activation_delay_ms`) further hides it from fast
+  shortcuts; a wheel event during the delay activates immediately.
 - Zoom level is remembered between activations (in memory).
-- Tray icon with "Exit".
+- Tray icon: left click → settings; right click → Settings / About / Download update / Exit.
+  Starting the exe again while it runs opens the settings of the running instance.
+
+## Settings window
+
+`settings.rs` — one native Win32 window (no GUI framework) with a tab control: **Lens** (size,
+rounding, border width/colour, shadow), **Zoom** (start/max zoom, wheel step, animation,
+smoothing), **General** (hotkey modifiers, activation delay, fade-in, autostart, update checks,
+open config folder, reset) and **About** (icon, version + build, update status, check now /
+download, project page, log).
+
+- Every control applies immediately via `config::update` (sanitize → bump generation → save
+  `config.toml` → push the hotkey mask into `input`); the render thread re-reads the config when
+  the generation changes, so the next lens already uses the new values.
+- Laid out in DIPs × monitor DPI × `UI_SCALE` (1.5): the UI is deliberately larger than standard
+  dialogs. `WM_DPICHANGED` rebuilds all controls for the new DPI.
+- Strings in `i18n.rs`: Russian when the Windows UI language is Russian, else English.
+- Common Controls v6 via the manifest (themed controls).
+
+## Update check
+
+`update.rs`, own thread; see [release.md](release.md#update-check-in-the-app). Notifies the tray
+(balloon) and the settings window via a posted `WM_UPDATE_STATUS`.
 
 ## Magnification mapping
 
@@ -31,15 +56,16 @@ unmagnified at the lens center. Desktop Duplication frames do not contain the cu
 
 | Thread | Job |
 | --- | --- |
-| main | config, logging, single-instance mutex, tray icon message loop |
+| main | config, logging, single-instance mutex, tray icon + settings window message loop |
 | input | `WH_KEYBOARD_LL` always; `WH_MOUSE_LL` installed **only while the chord is held** (zero mouse-latency overhead otherwise). Updates atomics, signals the render thread event. |
+| update | sleeps; checks GitHub releases ~30 s after start, then daily or on demand |
 | render | owns D3D11 device, overlay window, DirectComposition, swapchain and the duplication. Sleeps on the event when idle, runs a vsync-paced loop while active. |
 
 Shared state is lock-free atomics (`input.rs`). Hook procs only touch atomics and `SetEvent`, so
 they never risk `LowLevelHooksTimeout`.
 
-Safety net: while active, the render thread also checks `GetAsyncKeyState` for Ctrl and Alt each
-frame; if either is up it deactivates. This covers key-ups the hook never saw (e.g. foreground is
+Safety net: while active, the render thread also checks `GetAsyncKeyState` for the hotkey
+modifiers each frame; if one is up it deactivates. This covers key-ups the hook never saw (e.g. foreground is
 an elevated window and we are not uiAccess yet).
 
 ## Render pipeline (per frame while active)
@@ -85,15 +111,16 @@ is ≤1 extra frame behind the real desktop.
 
 ## Configuration
 
-`%APPDATA%\best_loupe\config.toml` (written with defaults on first run). See
-`config.example.toml` for all keys. Values are clamped to sane ranges on load.
+`%APPDATA%\best_loupe\config.toml` (written with defaults on first run), edited live by the
+settings window. See `config.example.toml` for all keys. Values are clamped to sane ranges on
+load and on every change.
 
 ## Elevation / z-order
 
 To work over elevated windows and above Start / search, the exe needs `uiAccess="true"` in its
 manifest, an Authenticode signature trusted by the machine (self-signed cert imported into
 Trusted Root) and installation under `Program Files`. Implemented behind the `uiaccess` cargo
-feature + `scripts/deploy.sh`; see [deploy.md](deploy.md). Dev builds (no feature) run from
+feature + `install.ps1`, which signs with a machine-local certificate; see [deploy.md](deploy.md). Dev builds (no feature) run from
 anywhere with `uiAccess="false"` and do not work while an elevated window is focused.
 
 ## Known limits (by design of variant A)
@@ -105,8 +132,9 @@ anywhere with `uiAccess="false"` and do not work while an elevated window is foc
 
 ## Roadmap
 
-1. **MVP** (this): single-output-at-a-time lens, Ctrl+Alt hold, wheel zoom, tray exit, config.
-2. ~~uiAccess manifest + self-sign + installer script; autostart.~~ Done (docs/deploy.md).
+1. ~~MVP: single-output-at-a-time lens, Ctrl+Alt hold, wheel zoom, tray exit, config.~~ v0.1.0.
+2. ~~uiAccess manifest + self-sign + installer script; autostart.~~ v0.1.0.
+2a. ~~Tray icon, settings/About window, configurable hotkey, GitHub releases + update check.~~ v0.2.0.
 3. Magnified cursor drawn from `GetFramePointerShape`; lens spanning two monitors.
 4. WGC fallback (hybrid GPUs), HDR (FP16 duplication + scRGB swapchain), rotated outputs.
 5. Optional variant B: whole-screen zoom while held via `MagSetFullscreenTransform`.

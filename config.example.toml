@@ -1,5 +1,6 @@
 # best_loupe config. Lives at %APPDATA%\best_loupe\config.toml (created with defaults on first run).
-# Restart best_loupe after editing. Out-of-range values are clamped.
+# Normally edited through the settings window (tray icon). Hand edits: restart best_loupe.
+# Out-of-range values are clamped.
 
 lens_width = 640            # lens size, physical pixels
 lens_height = 400
@@ -13,5 +14,10 @@ max_zoom = 16.0
 zoom_step = 1.25            # multiplier per wheel notch
 zoom_smoothing_ms = 45.0    # zoom animation time constant, 0 = instant
 fade_in_ms = 40.0           # 0 = instant
-activation_delay_ms = 90    # hold Ctrl+Alt this long before showing; a wheel event shows immediately
+activation_delay_ms = 90    # hold the hotkey this long before showing; a wheel event shows immediately
 smoothing = true            # bilinear filtering; false = crisp nearest-neighbour pixels
+hotkey_ctrl = true          # hotkey = all checked modifiers held (at least one)
+hotkey_alt = true
+hotkey_shift = false
+check_updates = true        # check GitHub releases ~30 s after start and daily
+update_repo = "artyfarty/best_loupe"

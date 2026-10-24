@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{Interface, PCSTR, Result, s, w};
 
 use crate::capture::{Acquire, Duplication};
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::{input, log};
 
 const SHADER_SRC: &str = include_str!("lens.hlsl");
@@ -134,13 +134,41 @@ struct Lens {
     ps: ID3D11PixelShader,
     cb: ID3D11Buffer,
     sampler: ID3D11SamplerState,
+    smoothing: bool,
     desktop: Option<(ID3D11Texture2D, ID3D11ShaderResourceView)>,
     dup: Option<Duplication>,
     has_frame: bool,
     shown: bool,
 }
 
+fn create_sampler(device: &ID3D11Device, smoothing: bool) -> Result<ID3D11SamplerState> {
+    let filter = if smoothing { D3D11_FILTER_MIN_MAG_MIP_LINEAR } else { D3D11_FILTER_MIN_MAG_MIP_POINT };
+    let desc = D3D11_SAMPLER_DESC {
+        Filter: filter,
+        AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
+        AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
+        AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+        MaxLOD: f32::MAX,
+        ..Default::default()
+    };
+    let mut sampler = None;
+    unsafe { device.CreateSamplerState(&desc, Some(&mut sampler))? };
+    Ok(sampler.unwrap())
+}
+
 impl Lens {
+    fn set_smoothing(&mut self, smoothing: bool) {
+        if smoothing != self.smoothing {
+            match create_sampler(&self.device, smoothing) {
+                Ok(s) => {
+                    self.sampler = s;
+                    self.smoothing = smoothing;
+                }
+                Err(e) => log!("lens: sampler recreate failed: {e}"),
+            }
+        }
+    }
+
     fn new(info: OutputInfo, cfg: &Config) -> Result<Self> {
         let width = (info.rect.right - info.rect.left) as u32;
         let height = (info.rect.bottom - info.rect.top) as u32;
@@ -238,17 +266,8 @@ impl Lens {
         let mut cb = None;
         unsafe { device.CreateBuffer(&cb_desc, None, Some(&mut cb))? };
 
-        let filter = if cfg.smoothing { D3D11_FILTER_MIN_MAG_MIP_LINEAR } else { D3D11_FILTER_MIN_MAG_MIP_POINT };
-        let sampler_desc = D3D11_SAMPLER_DESC {
-            Filter: filter,
-            AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
-            AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
-            AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
-            MaxLOD: f32::MAX,
-            ..Default::default()
-        };
-        let mut sampler = None;
-        unsafe { device.CreateSamplerState(&sampler_desc, Some(&mut sampler))? };
+        let sampler = create_sampler(&device, cfg.smoothing)?;
+        let smoothing = cfg.smoothing;
 
         Ok(Self {
             info,
@@ -266,7 +285,8 @@ impl Lens {
             vs: vs.unwrap(),
             ps: ps.unwrap(),
             cb: cb.unwrap(),
-            sampler: sampler.unwrap(),
+            sampler,
+            smoothing,
             desktop: None,
             dup: None,
             has_frame: false,
@@ -433,7 +453,7 @@ struct Animator {
     last: Instant,
 }
 
-pub fn run(cfg: Config, wake: HANDLE) {
+pub fn run(wake: HANDLE) {
     unsafe {
         let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
     }
@@ -441,12 +461,24 @@ pub fn run(cfg: Config, wake: HANDLE) {
 
     let mut lens: Option<Lens> = None;
     let mut active = false;
+    let mut cfg_gen = config::generation();
+    let mut cfg = config::current();
     let mut anim = Animator { zoom_target: cfg.initial_zoom, zoom: cfg.initial_zoom, alpha: 0.0, last: Instant::now() };
     let mut frames: u64 = 0;
     let mut stats_since = Instant::now();
 
     loop {
         pump_messages();
+
+        if config::generation() != cfg_gen {
+            cfg_gen = config::generation();
+            cfg = config::current();
+            anim.zoom_target = anim.zoom_target.clamp(cfg.min_zoom, cfg.max_zoom);
+            anim.zoom = anim.zoom.clamp(cfg.min_zoom, cfg.max_zoom);
+            if let Some(l) = lens.as_mut() {
+                l.set_smoothing(cfg.smoothing);
+            }
+        }
 
         let mut chord = input::chord_held();
         if active && chord {

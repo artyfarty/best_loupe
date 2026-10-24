@@ -1,11 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod capture;
 mod config;
+mod i18n;
 mod input;
 mod log;
 mod render;
+mod settings;
 mod tray;
+mod update;
 
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Threading::*;
@@ -27,7 +31,9 @@ fn main() {
 
     let _mutex = unsafe { CreateMutexW(None, true, w!("Local\\best_loupe_single_instance")) };
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
-        log!("another instance is already running, exiting");
+        // Launching it again (e.g. from the Start menu) opens the running instance's settings.
+        let tab = if std::env::args().any(|a| a == "--about") { settings::TAB_ABOUT } else { settings::TAB_LENS };
+        tray::signal_running_instance(tab);
         return;
     }
 
@@ -36,10 +42,11 @@ fn main() {
 
     let wake = unsafe { CreateEventW(None, false, false, None) }.expect("CreateEvent");
     input::spawn(wake);
+    update::spawn();
     let wake_raw = wake.0 as usize;
     std::thread::Builder::new()
         .name("render".into())
-        .spawn(move || render::run(cfg, HANDLE(wake_raw as *mut _)))
+        .spawn(move || render::run(HANDLE(wake_raw as *mut _)))
         .expect("spawn render thread");
 
     if let Err(e) = tray::run() {

@@ -18,7 +18,7 @@ pub fn init() {
     let _ = SINK.set(Mutex::new(file));
 }
 
-fn log_path() -> Option<PathBuf> {
+pub fn log_path() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     Some(PathBuf::from(base).join("best_loupe").join("best_loupe.log"))
 }

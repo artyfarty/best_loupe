@@ -1,10 +1,9 @@
-# Installs (or uninstalls) a signed uiAccess build of best_loupe. Must run elevated.
-#   install.ps1 -SourceDir <dir with best_loupe.exe + best_loupe-codesign.cer> [-User name] [-NoAutostart] [-NoLaunch]
+# Script installer used by scripts/deploy.sh (headless, e.g. over SSH). End users get setup.exe,
+# which does the same. Must run elevated.
+#   install.ps1 [-SourceDir <dir with best_loupe.exe + uiaccess-sign.ps1>] [-User name] [-NoAutostart] [-NoLaunch]
 #   install.ps1 -Uninstall
-# uiAccess requirements: trusted Authenticode signature (our self-signed cert goes into
-# LocalMachine Root + TrustedPublisher) and a secure location (Program Files).
 param(
-    [string]$SourceDir,
+    [string]$SourceDir = $PSScriptRoot,
     [string]$User = $env:USERNAME,
     [switch]$NoAutostart,
     [switch]$NoLaunch,
@@ -19,6 +18,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 $dest = Join-Path $env:ProgramFiles 'best_loupe'
 $target = Join-Path $dest 'best_loupe.exe'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$signer = Join-Path $SourceDir 'uiaccess-sign.ps1'
 
 function Stop-Loupe {
     Get-Process best_loupe -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -29,37 +29,20 @@ if ($Uninstall) {
     Stop-Loupe
     Remove-ItemProperty $runKey -Name best_loupe -ErrorAction SilentlyContinue
     Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
-    foreach ($store in 'Root', 'TrustedPublisher') {
-        Get-ChildItem "Cert:\LocalMachine\$store" | Where-Object Subject -eq 'CN=best_loupe code signing' |
-            ForEach-Object { Remove-Item $_.PSPath; "removed cert from $store" }
-    }
+    & $signer -Remove
     'uninstalled'
     exit 0
 }
 
-if (-not $SourceDir) { throw '-SourceDir is required' }
-$cer = Join-Path $SourceDir 'best_loupe-codesign.cer'
 $exe = Join-Path $SourceDir 'best_loupe.exe'
-
-$cert = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $cer
-foreach ($store in 'Root', 'TrustedPublisher') {
-    $s = New-Object Security.Cryptography.X509Certificates.X509Store $store, 'LocalMachine'
-    $s.Open('ReadWrite')
-    if (-not ($s.Certificates | Where-Object Thumbprint -eq $cert.Thumbprint)) {
-        $s.Add($cert)
-        "cert $($cert.Thumbprint) added to LocalMachine\$store"
-    }
-    $s.Close()
-}
-
-$sig = Get-AuthenticodeSignature $exe
-if ($sig.Status -ne 'Valid') { throw "exe signature not valid: $($sig.Status) $($sig.StatusMessage)" }
-if ($sig.SignerCertificate.Thumbprint -ne $cert.Thumbprint) { throw 'exe is signed by a different cert' }
+if (-not (Test-Path $exe)) { throw "not found: $exe" }
 
 Stop-Loupe
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item $exe $target -Force
 "installed $target"
+
+& $signer -Exe $target
 
 if ($NoAutostart) {
     Remove-ItemProperty $runKey -Name best_loupe -ErrorAction SilentlyContinue

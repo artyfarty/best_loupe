@@ -33,10 +33,10 @@ fn build_id(root: &Path, version: &str) -> String {
             out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
         })
         .unwrap_or_else(|| format!("v{version}-unknown"));
-    // A build exactly on (or after) a release tag must match the Cargo.toml version.
-    if let Some(tag) = describe.strip_prefix('v') {
-        let tag_ver = tag.split('-').next().unwrap_or("");
-        if tag_ver.split('.').count() == 3 && tag_ver != version {
+    // A clean build exactly on a release tag must match the Cargo.toml version. Builds after a
+    // tag (`vX.Y.Z-N-gHASH`) or with local changes are work towards the next version.
+    if let Some(tag_ver) = describe.strip_prefix('v') {
+        if !tag_ver.contains('-') && tag_ver.split('.').count() == 3 && tag_ver != version {
             println!("cargo:warning=git tag v{tag_ver} does not match Cargo.toml version {version}");
         }
     }
@@ -59,12 +59,18 @@ fn embed_manifest(root: &Path, out_dir: &Path) {
     println!("cargo:rustc-link-arg-bins=/MANIFESTINPUT:{}", out.display());
 }
 
-/// VERSIONINFO resource (Explorer → Properties → Details), compiled with the SDK's rc.exe.
+/// App icon (resource id 1) + VERSIONINFO (Explorer → Properties → Details), compiled with the
+/// SDK's rc.exe.
 fn embed_version_resource(out_dir: &Path, version: &str, build: &str) {
     let mut nums = version.split('.').map(|p| p.parse::<u16>().unwrap_or(0));
     let (major, minor, patch) = (nums.next().unwrap_or(0), nums.next().unwrap_or(0), nums.next().unwrap_or(0));
+    let icon = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("best_loupe.ico");
+    println!("cargo:rerun-if-changed={}", icon.display());
+    let icon = icon.display().to_string().replace('\\', "\\\\");
     let rc = format!(
-        r#"1 VERSIONINFO
+        r#"1 ICON "{icon}"
+
+1 VERSIONINFO
 FILEVERSION {major},{minor},{patch},0
 PRODUCTVERSION {major},{minor},{patch},0
 FILEFLAGSMASK 0x3fL

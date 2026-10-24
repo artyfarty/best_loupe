@@ -1,9 +1,14 @@
 //! User configuration, loaded from `%APPDATA%\best_loupe\config.toml`.
+//!
+//! The live config is process-global: the settings window updates it (and saves the file), the
+//! render and input threads pick changes up via [`generation`].
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Lens size in physical pixels.
@@ -26,10 +31,18 @@ pub struct Config {
     pub zoom_smoothing_ms: f32,
     /// Fade-in duration, ms (0 = instant).
     pub fade_in_ms: f32,
-    /// Hold Ctrl+Alt this long before the lens shows (a wheel event shows it immediately).
+    /// Hold the hotkey this long before the lens shows (a wheel event shows it immediately).
     pub activation_delay_ms: u32,
     /// Bilinear filtering of the magnified image (false = crisp nearest-neighbour pixels).
     pub smoothing: bool,
+    /// Hotkey: modifiers that must all be held. At least one must be set.
+    pub hotkey_ctrl: bool,
+    pub hotkey_alt: bool,
+    pub hotkey_shift: bool,
+    /// Periodically check GitHub releases of `update_repo` for a newer version.
+    pub check_updates: bool,
+    /// GitHub `owner/name` whose releases are checked.
+    pub update_repo: String,
 }
 
 impl Default for Config {
@@ -49,17 +62,23 @@ impl Default for Config {
             fade_in_ms: 40.0,
             activation_delay_ms: 90,
             smoothing: true,
+            hotkey_ctrl: true,
+            hotkey_alt: true,
+            hotkey_shift: false,
+            check_updates: true,
+            update_repo: "artyfarty/best_loupe".into(),
         }
     }
 }
 
 impl Config {
-    fn sanitize(mut self) -> Self {
+    pub fn sanitize(mut self) -> Self {
         self.lens_width = self.lens_width.clamp(64, 4096);
         self.lens_height = self.lens_height.clamp(64, 4096);
         let half = self.lens_width.min(self.lens_height) as f32 / 2.0;
         self.corner_radius = self.corner_radius.clamp(0.0, half);
         self.border_width = self.border_width.clamp(0.0, 32.0);
+        self.border_color &= 0xff_ffff;
         self.shadow_size = self.shadow_size.clamp(0.0, 128.0);
         self.min_zoom = self.min_zoom.clamp(1.0, 64.0);
         self.max_zoom = self.max_zoom.clamp(self.min_zoom, 64.0);
@@ -68,23 +87,74 @@ impl Config {
         self.zoom_smoothing_ms = self.zoom_smoothing_ms.clamp(0.0, 1000.0);
         self.fade_in_ms = self.fade_in_ms.clamp(0.0, 1000.0);
         self.activation_delay_ms = self.activation_delay_ms.min(2000);
+        if !(self.hotkey_ctrl || self.hotkey_alt || self.hotkey_shift) {
+            self.hotkey_ctrl = true;
+            self.hotkey_alt = true;
+        }
         self
     }
 }
 
-fn config_path() -> Option<PathBuf> {
+static CURRENT: RwLock<Option<Config>> = RwLock::new(None);
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Snapshot of the live config.
+pub fn current() -> Config {
+    CURRENT.read().unwrap().clone().unwrap_or_default()
+}
+
+/// Bumped on every change; compare against a cached value to detect updates.
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::Acquire)
+}
+
+/// Applies `f` to the live config, sanitizes, saves to disk and notifies listeners.
+pub fn update(f: impl FnOnce(&mut Config)) {
+    let cfg = {
+        let mut guard = CURRENT.write().unwrap();
+        let mut cfg = guard.clone().unwrap_or_default();
+        f(&mut cfg);
+        let cfg = cfg.sanitize();
+        if guard.as_ref() == Some(&cfg) {
+            return;
+        }
+        *guard = Some(cfg.clone());
+        cfg
+    };
+    GENERATION.fetch_add(1, Ordering::AcqRel);
+    save(&cfg);
+    crate::input::apply_config(&cfg);
+}
+
+pub fn config_path() -> Option<PathBuf> {
     let base = std::env::var_os("APPDATA")?;
     Some(PathBuf::from(base).join("best_loupe").join("config.toml"))
 }
 
-/// Loads the config; writes a default file if none exists. Never fails: falls back to defaults.
+fn save(cfg: &Config) {
+    let Some(path) = config_path() else { return };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    match toml::to_string_pretty(cfg) {
+        Ok(text) => {
+            if let Err(e) = std::fs::write(&path, text) {
+                crate::log!("config: write {} failed: {e}", path.display());
+            }
+        }
+        Err(e) => crate::log!("config: serialize failed: {e}"),
+    }
+}
+
+/// Loads the config from disk into the live slot; writes a default file if none exists.
+/// Never fails: falls back to defaults.
 pub fn load() -> Config {
-    let Some(path) = config_path() else {
-        crate::log!("config: APPDATA not set, using defaults");
-        return Config::default();
-    };
-    match std::fs::read_to_string(&path) {
-        Ok(text) => match toml::from_str::<Config>(&text) {
+    let cfg = match config_path().map(|p| (std::fs::read_to_string(&p), p)) {
+        None => {
+            crate::log!("config: APPDATA not set, using defaults");
+            Config::default()
+        }
+        Some((Ok(text), path)) => match toml::from_str::<Config>(&text) {
             Ok(cfg) => {
                 crate::log!("config: loaded {}", path.display());
                 cfg.sanitize()
@@ -94,16 +164,15 @@ pub fn load() -> Config {
                 Config::default()
             }
         },
-        Err(_) => {
+        Some((Err(_), path)) => {
             let cfg = Config::default();
-            if let Some(dir) = path.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            if let Ok(text) = toml::to_string_pretty(&cfg) {
-                let _ = std::fs::write(&path, text);
-                crate::log!("config: wrote defaults to {}", path.display());
-            }
+            save(&cfg);
+            crate::log!("config: wrote defaults to {}", path.display());
             cfg
         }
-    }
+    };
+    *CURRENT.write().unwrap() = Some(cfg.clone());
+    GENERATION.fetch_add(1, Ordering::AcqRel);
+    crate::input::apply_config(&cfg);
+    cfg
 }

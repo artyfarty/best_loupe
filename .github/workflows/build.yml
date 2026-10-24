@@ -1,0 +1,92 @@
+# Build + test on every push / PR; on a vX.Y.Z tag also publish the GitHub release.
+# Third-party actions are pinned to commit SHAs; tool downloads are pinned by version + SHA256.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN: "1.99.1"
+  INNO_VERSION: "6.7.3"
+  INNO_TAG: "is-6_7_3"
+  INNO_SHA256: "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write # release creation on tags
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tags for `git describe` (burned into the exe)
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+
+      - name: Version
+        id: ver
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "describe: $(git describe --tags --always --dirty)"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/}" != "v$version" ]]; then
+            echo "::error::tag ${GITHUB_REF#refs/tags/} does not match Cargo.toml version $version"; exit 1
+          fi
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Build portable
+        run: cargo build --release --locked --target-dir target/portable
+
+      - name: Build uiAccess
+        run: cargo build --release --locked --features uiaccess --target-dir target/dist
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP\innosetup.exe"
+          Invoke-WebRequest "https://github.com/jrsoftware/issrc/releases/download/$env:INNO_TAG/innosetup-$env:INNO_VERSION.exe" -OutFile $exe
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:INNO_SHA256) { throw "Inno Setup hash mismatch: $hash" }
+          Start-Process $exe -Wait -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/CURRENTUSER','/NORESTART','/NOICONS',"/DIR=$env:RUNNER_TEMP\inno"
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP\inno\ISCC.exe" /Q "/DAppVersion=${{ steps.ver.outputs.version }}" installer\best_loupe.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - name: Package
+        run: |
+          v="v${{ steps.ver.outputs.version }}"
+          cp target/portable/release/best_loupe.exe "dist/best_loupe-$v-portable-x64.exe"
+          (cd dist && sha256sum best_loupe-* > SHA256SUMS && cat SHA256SUMS)
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: best_loupe-${{ steps.ver.outputs.version }}-${{ github.sha }}
+          path: dist/
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          awk -v t="## $tag" 'index($0,t)==1{f=1;next} /^## /{f=0} f' CHANGELOG.md > notes.md
+          gh release create "$tag" --title "best_loupe $tag" --notes-file notes.md \
+            "dist/best_loupe-$tag-setup.exe" "dist/best_loupe-$tag-portable-x64.exe" dist/SHA256SUMS
