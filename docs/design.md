@@ -101,8 +101,14 @@ is ≤1 extra frame behind the real desktop.
 ## Show / hide
 
 - Activation: find the DXGI output under the cursor (rebuild the lens if the output changed),
-  create the duplication, wait up to ~50 ms for its first full frame, render the first frame,
+  create the duplication, wait (≤150 ms, typically 3–6 ms) for the first *real* frame, render it,
   **then** show the window (no stale-frame flash). Re-assert `HWND_TOPMOST` on each show.
+- Desktop Duplication's **first frame is empty**: `AcquireNextFrame` returns it with
+  `LastPresentTime == 0` and an all-zero surface (measured: mean 0.0 vs ~90 for the real image).
+  Only frames with `LastPresentTime != 0` are copied; the real full image follows within a few ms,
+  even on a static desktop. (v0.1.0–v0.3.0 copied that first frame: a one-frame black flash when
+  live, and a permanently black lens when the freeze key was held from the start.) While no real
+  frame has arrived, capture keeps running even when frozen.
 - Deactivation: present a transparent frame, hide the window, release the duplication.
   The overlay and the capture exist only while the key is held, so games keep independent
   flip / MPO the rest of the time (research §A).

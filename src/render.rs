@@ -526,8 +526,16 @@ pub fn run(wake: HANDLE) {
             }
             let l = lens.as_mut().unwrap();
             let t0 = Instant::now();
-            // Block briefly for the first full desktop image so we never show an empty/stale lens.
-            if let Err(e) = l.capture(100) {
+            // Wait briefly for the first real desktop image so we never show an empty/stale lens
+            // (the duplication's first frame is empty; the real one follows within a few ms).
+            let mut res = Ok(());
+            while !l.has_frame && t0.elapsed().as_millis() < 150 {
+                res = l.capture(50);
+                if res.is_err() {
+                    break;
+                }
+            }
+            if let Err(e) = res {
                 log!("lens: capture failed: {e}");
                 lens = None;
                 wait_or_wake(wake, 500);
@@ -555,13 +563,14 @@ pub fn run(wake: HANDLE) {
         }
 
         // Frozen: keep the last desktop image (the lens still follows the cursor and zooms), so
-        // tooltips and other things that vanish on mouse move can be read.
+        // tooltips and other things that vanish on mouse move can be read. Until the first real
+        // image has arrived, capture continues even when frozen (otherwise the lens stays empty).
         let frozen = input::frozen();
         if frozen != was_frozen {
             log!("lens: {}", if frozen { "frozen" } else { "live" });
             was_frozen = frozen;
         }
-        if !frozen && let Err(e) = l.capture(0) {
+        if (!frozen || !l.has_frame) && let Err(e) = l.capture(0) {
             log!("lens: capture error {e}, rebuilding");
             lens = None;
             active = false;

@@ -4,6 +4,12 @@ Versions follow [SemVer](https://semver.org/); each release is a git tag `vX.Y.Z
 `Cargo.toml`. The version and the exact `git describe` are burned into the exe (VERSIONINFO
 resource, log, tray tooltip).
 
+## v0.3.1 — 2026-10-29
+
+- Fix: pressing the hotkey and the freeze key at the same moment showed a black lens. The first
+  Desktop Duplication frame is empty and was used as the picture; it is now skipped (this also
+  removes a one-frame black flash when the lens appears).
+
 ## v0.3.0 — 2026-10-29
 
 - Freeze frame: hold the freeze key (Shift by default, selectable in settings) together with the

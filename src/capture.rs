@@ -1,7 +1,5 @@
 //! Desktop Duplication (DXGI) capture of one output into our own shader-readable texture.
 
-use std::cell::Cell;
-
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::*;
@@ -18,9 +16,6 @@ pub enum Acquire {
 
 pub struct Duplication {
     dup: IDXGIOutputDuplication,
-    /// No image copied yet: the first acquired frame holds the full desktop even if
-    /// `LastPresentTime` is 0, and a static desktop would never produce another one.
-    fresh: Cell<bool>,
     pub width: u32,
     pub height: u32,
 }
@@ -38,7 +33,7 @@ impl Duplication {
         if desc.Rotation != DXGI_MODE_ROTATION_IDENTITY && desc.Rotation != DXGI_MODE_ROTATION_UNSPECIFIED {
             crate::log!("capture: rotated output ({:?}) is not supported yet", desc.Rotation);
         }
-        Ok(Self { dup, fresh: Cell::new(true), width: desc.ModeDesc.Width, height: desc.ModeDesc.Height })
+        Ok(Self { dup, width: desc.ModeDesc.Width, height: desc.ModeDesc.Height })
     }
 
     /// Waits up to `timeout_ms` for a new frame and copies it into `dst` (same size, BGRA).
@@ -52,11 +47,13 @@ impl Duplication {
             Err(e) => return Err(e),
         }
         let mut result = Ok(Acquire::NoChange);
-        if info.LastPresentTime != 0 || self.fresh.get() {
+        // A frame with LastPresentTime == 0 carries no new image (pointer-only update) — including
+        // the very first frame of a new duplication, whose surface is all zeros: copying it shows
+        // a black lens (and stays black when the lens is frozen right away).
+        if info.LastPresentTime != 0 {
             if let Some(res) = resource {
                 result = res.cast::<ID3D11Texture2D>().map(|tex| {
                     unsafe { ctx.CopyResource(dst, &tex) };
-                    self.fresh.set(false);
                     Acquire::NewFrame
                 });
             }
