@@ -11,16 +11,19 @@ use windows::core::{HSTRING, PCWSTR, Result, w};
 
 use crate::i18n::{self, t};
 use crate::update::{self, Status};
-use crate::{config, settings};
+use crate::{config, input, settings};
 
 const WM_TRAY: u32 = WM_APP + 10;
 /// Posted by a second instance: open settings on tab `wparam`.
 const WM_OPEN_SETTINGS: u32 = WM_APP + 11;
+/// Posted by `best_loupe.exe --quit`: exit (a uiAccess process cannot be killed from a normal one).
+const WM_QUIT_REQUEST: u32 = WM_APP + 12;
 const CLASS: PCWSTR = w!("best_loupe_tray");
 const CMD_SETTINGS: usize = 1;
 const CMD_ABOUT: usize = 2;
 const CMD_UPDATE: usize = 3;
 const CMD_EXIT: usize = 4;
+const CMD_PAUSE: usize = 5;
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
@@ -37,7 +40,9 @@ fn copy_wstr(dst: &mut [u16], s: &str) {
 
 fn icon_data(hwnd: HWND) -> NOTIFYICONDATAW {
     let hinstance: HINSTANCE = unsafe { GetModuleHandleW(None).map(Into::into).unwrap_or_default() };
-    let icon = unsafe { LoadIconMetric(Some(hinstance), PCWSTR(1 as *const u16), LIM_SMALL) }
+    // Resource 1 = normal icon, 2 = greyed-out "paused" icon.
+    let id = if input::enabled() { 1 } else { 2 };
+    let icon = unsafe { LoadIconMetric(Some(hinstance), PCWSTR(id as *const u16), LIM_SMALL) }
         .or_else(|_| unsafe { LoadIconW(None, IDI_APPLICATION) })
         .unwrap_or_default();
     let mut nid = NOTIFYICONDATAW {
@@ -50,6 +55,7 @@ fn icon_data(hwnd: HWND) -> NOTIFYICONDATAW {
         ..Default::default()
     };
     let tip = t().tip.replace("{hotkey}", &i18n::hotkey_label(&config::current()));
+    let tip = if input::enabled() { tip } else { format!("{} — {tip}", t().tip_paused) };
     copy_wstr(&mut nid.szTip, &format!("{tip} ({})", crate::VERSION));
     nid
 }
@@ -87,6 +93,9 @@ unsafe fn show_menu(hwnd: HWND) {
         let _ = Shell_NotifyIconW(NIM_MODIFY, &icon_data(hwnd));
         let Ok(menu) = CreatePopupMenu() else { return };
         let s = t();
+        let pause_flags = if input::enabled() { MF_STRING } else { MF_STRING | MF_CHECKED };
+        let _ = AppendMenuW(menu, pause_flags, CMD_PAUSE, &HSTRING::from(s.menu_pause));
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS, &HSTRING::from(s.menu_settings));
         let _ = AppendMenuW(menu, MF_STRING, CMD_ABOUT, &HSTRING::from(s.menu_about));
         if let Status::Available { version, .. } = update::status() {
@@ -104,6 +113,11 @@ unsafe fn show_menu(hwnd: HWND) {
             CMD_SETTINGS => settings::open(settings::TAB_LENS),
             CMD_ABOUT => settings::open(settings::TAB_ABOUT),
             CMD_UPDATE => open_release_page(),
+            CMD_PAUSE => {
+                input::set_enabled(!input::enabled());
+                crate::log!("tray: lens {}", if input::enabled() { "resumed" } else { "paused" });
+                let _ = Shell_NotifyIconW(NIM_MODIFY, &icon_data(hwnd));
+            }
             CMD_EXIT => {
                 let _ = Shell_NotifyIconW(NIM_DELETE, &icon_data(hwnd));
                 PostQuitMessage(0);
@@ -123,6 +137,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     NIN_BALLOONUSERCLICK => open_release_page(),
                     _ => {}
                 }
+                LRESULT(0)
+            }
+            WM_QUIT_REQUEST => {
+                crate::log!("tray: quit requested by another instance");
+                let _ = Shell_NotifyIconW(NIM_DELETE, &icon_data(hwnd));
+                PostQuitMessage(0);
                 LRESULT(0)
             }
             WM_OPEN_SETTINGS => {
@@ -148,6 +168,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 LRESULT(0)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        }
+    }
+}
+
+/// Asks a running instance to exit; returns whether one was found.
+pub fn quit_running_instance() -> bool {
+    unsafe {
+        match FindWindowW(CLASS, PCWSTR::null()) {
+            Ok(hwnd) => PostMessageW(Some(hwnd), WM_QUIT_REQUEST, WPARAM(0), LPARAM(0)).is_ok(),
+            Err(_) => false,
         }
     }
 }
@@ -193,6 +223,7 @@ pub fn run() -> Result<()> {
         )?;
         // A second instance may run at a different integrity level than this (uiAccess) one.
         let _ = ChangeWindowMessageFilterEx(hwnd, WM_OPEN_SETTINGS, MSGFLT_ALLOW, None);
+        let _ = ChangeWindowMessageFilterEx(hwnd, WM_QUIT_REQUEST, MSGFLT_ALLOW, None);
         add_icon(hwnd);
         update::add_listener(hwnd);
 

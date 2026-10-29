@@ -12,20 +12,30 @@ overlay rendered by a shader).
 - **Mouse wheel** while held → zoom in/out (multiplicative steps, smooth animation). The wheel
   event is swallowed so the app below does not scroll/zoom.
 - Release any hotkey modifier → lens disappears instantly.
-- Pressing any other key — including a modifier that is not part of the hotkey (Shift with
-  Ctrl+Alt) — while the hotkey is held "taints" the chord: the lens hides and stays hidden until a
+- Pressing any other key — including a modifier that is neither part of the hotkey nor the freeze
+  key — while the hotkey is held "taints" the chord: the lens hides and stays hidden until a
   hotkey modifier is released. This keeps shortcuts like Ctrl+Alt+Del / Ctrl+Alt+T from flashing
   the lens. A short activation delay (`activation_delay_ms`) further hides it from fast
   shortcuts; a wheel event during the delay activates immediately.
+- **Freeze**: holding the freeze key (Shift by default; Ctrl/Alt/off selectable, never part of the
+  hotkey) on top of the hotkey stops capture: the lens keeps the last picture while still following
+  the cursor and zooming, so tooltips and other things that vanish on mouse move can be read.
+  Release it → live again. A frozen lens gets `freeze_border_color` and a border of at least 3 px.
+  It cannot catch something that disappears on the key press itself: hold the hotkey first, then
+  add the freeze key.
+- **Pause** (tray menu, checkable): the hotkey is ignored and no mouse hook is installed; the tray
+  icon turns grey (resource 2) and the tooltip says so. Not persisted — a restart resumes.
 - Zoom level is remembered between activations (in memory).
 - Tray icon: left click → settings; right click → Settings / About / Download update / Exit.
-  Starting the exe again while it runs opens the settings of the running instance.
+  Starting the exe again while it runs opens the settings of the running instance;
+  `best_loupe.exe --quit` asks it to exit (needed for the installed uiAccess copy, which a normal
+  process cannot kill; used by `scripts/win-run.sh` and the installer).
 
 ## Settings window
 
 `settings.rs` — one native Win32 window (no GUI framework) with a tab control: **Lens** (size,
 rounding, border width/colour, shadow), **Zoom** (start/max zoom, wheel step, animation,
-smoothing), **General** (hotkey modifiers, activation delay, fade-in, autostart, update checks,
+smoothing), **General** (hotkey modifiers, freeze key, activation delay, fade-in, autostart, update checks,
 open config folder, reset) and **About** (icon, version + build, update status, check now /
 download, project page, log).
 
@@ -135,6 +145,7 @@ anywhere with `uiAccess="false"` and do not work while an elevated window is foc
 1. ~~MVP: single-output-at-a-time lens, Ctrl+Alt hold, wheel zoom, tray exit, config.~~ v0.1.0.
 2. ~~uiAccess manifest + self-sign + installer script; autostart.~~ v0.1.0.
 2a. ~~Tray icon, settings/About window, configurable hotkey, GitHub releases + update check.~~ v0.2.0.
+2b. ~~Freeze-frame key, tray pause.~~ v0.3.0.
 3. Magnified cursor drawn from `GetFramePointerShape`; lens spanning two monitors.
 4. WGC fallback (hybrid GPUs), HDR (FP16 duplication + scRGB swapchain), rotated outputs.
 5. Optional variant B: whole-screen zoom while held via `MagSetFullscreenTransform`.

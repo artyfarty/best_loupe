@@ -19,5 +19,7 @@ smoothing = true            # bilinear filtering; false = crisp nearest-neighbou
 hotkey_ctrl = true          # hotkey = all checked modifiers held (at least one)
 hotkey_alt = true
 hotkey_shift = false
+freeze_key = "shift"         # hold with the hotkey to freeze the picture: "shift", "ctrl", "alt" or "none"
+freeze_border_color = 0x3d8bfd  # border colour while frozen
 check_updates = true        # check GitHub releases ~30 s after start and daily
 update_repo = "artyfarty/best_loupe"

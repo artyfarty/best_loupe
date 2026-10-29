@@ -4,6 +4,8 @@ use std::sync::OnceLock;
 
 pub struct Strings {
     pub tip: &'static str,
+    pub menu_pause: &'static str,
+    pub tip_paused: &'static str,
     pub menu_settings: &'static str,
     pub menu_about: &'static str,
     pub menu_update: &'static str,
@@ -27,6 +29,9 @@ pub struct Strings {
     pub smoothing: &'static str,
     pub hotkey: &'static str,
     pub hotkey_hint: &'static str,
+    pub freeze_key: &'static str,
+    pub freeze_hint: &'static str,
+    pub freeze_off: &'static str,
     pub activation_delay: &'static str,
     pub fade_in: &'static str,
     pub autostart: &'static str,
@@ -53,6 +58,8 @@ pub struct Strings {
 
 static EN: Strings = Strings {
     tip: "best_loupe — hold {hotkey}, scroll to zoom",
+    menu_pause: "Pause the lens",
+    tip_paused: "paused",
     menu_settings: "Settings…",
     menu_about: "About best_loupe",
     menu_update: "Download update {version}…",
@@ -76,6 +83,9 @@ static EN: Strings = Strings {
     smoothing: "Smooth the magnified image (off = crisp pixels)",
     hotkey: "Hold to magnify",
     hotkey_hint: "Scroll the wheel while holding to change the zoom.",
+    freeze_key: "Freeze picture",
+    freeze_hint: "Hold it too to freeze the picture in the lens — e.g. to read a tooltip.",
+    freeze_off: "Off",
     activation_delay: "Show after",
     fade_in: "Fade-in",
     autostart: "Start with Windows",
@@ -102,6 +112,8 @@ static EN: Strings = Strings {
 
 static RU: Strings = Strings {
     tip: "best_loupe — держите {hotkey}, колесо меняет масштаб",
+    menu_pause: "Приостановить лупу",
+    tip_paused: "на паузе",
     menu_settings: "Настройки…",
     menu_about: "О программе",
     menu_update: "Скачать обновление {version}…",
@@ -125,6 +137,9 @@ static RU: Strings = Strings {
     smoothing: "Сглаживать увеличенное изображение (выкл. — чёткие пиксели)",
     hotkey: "Удерживать для лупы",
     hotkey_hint: "Крутите колесо, удерживая клавиши, чтобы менять масштаб.",
+    freeze_key: "Заморозить картинку",
+    freeze_hint: "Зажмите её дополнительно, чтобы картинка в лупе замерла — например, прочитать подсказку.",
+    freeze_off: "Выкл.",
     activation_delay: "Показывать через",
     fade_in: "Появление",
     autostart: "Запускать вместе с Windows",

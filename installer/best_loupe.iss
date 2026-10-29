@@ -78,11 +78,17 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM best_loupe.exe"; Flags: runh
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uiaccess-sign.ps1"" -Remove"; Flags: runhidden; RunOnceId: "RemoveCert"
 
 [Code]
-// The running instance (tray app) locks the exe: stop it before files are replaced.
+// The running instance (tray app) locks the exe: stop it before files are replaced. Ask it
+// politely first (--quit, v0.3.0+), then force.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
 begin
+  if FileExists(ExpandConstant('{app}\best_loupe.exe')) then
+  begin
+    Exec(ExpandConstant('{app}\best_loupe.exe'), '--quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Sleep(700);
+  end;
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM best_loupe.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Sleep(500);
   Result := '';

@@ -59,16 +59,21 @@ fn embed_manifest(root: &Path, out_dir: &Path) {
     println!("cargo:rustc-link-arg-bins=/MANIFESTINPUT:{}", out.display());
 }
 
-/// App icon (resource id 1) + VERSIONINFO (Explorer → Properties → Details), compiled with the
+/// App icon (resource id 1), paused tray icon (id 2) + VERSIONINFO (Explorer → Properties → Details), compiled with the
 /// SDK's rc.exe.
 fn embed_version_resource(out_dir: &Path, version: &str, build: &str) {
     let mut nums = version.split('.').map(|p| p.parse::<u16>().unwrap_or(0));
     let (major, minor, patch) = (nums.next().unwrap_or(0), nums.next().unwrap_or(0), nums.next().unwrap_or(0));
-    let icon = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("best_loupe.ico");
-    println!("cargo:rerun-if-changed={}", icon.display());
-    let icon = icon.display().to_string().replace('\\', "\\\\");
+    let icon_path = |name: &str| {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(name);
+        println!("cargo:rerun-if-changed={}", p.display());
+        p.display().to_string().replace('\\', "\\\\")
+    };
+    let icon = icon_path("best_loupe.ico");
+    let paused = icon_path("best_loupe_paused.ico");
     let rc = format!(
         r#"1 ICON "{icon}"
+2 ICON "{paused}"
 
 1 VERSIONINFO
 FILEVERSION {major},{minor},{patch},0

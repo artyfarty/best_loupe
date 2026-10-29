@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Generates assets/best_loupe.ico: a magnifying glass, drawn separately per size (supersampled)
-so small sizes stay crisp. Run from the repo root: python3 tools/make_icon.py [preview.png]"""
+"""Generates assets/best_loupe.ico (a magnifying glass, drawn separately per size, supersampled so
+small sizes stay crisp) and assets/best_loupe_paused.ico (the same, desaturated and faded: tray
+icon while the lens is paused). Run from the repo root: python3 tools/make_icon.py [preview.png]"""
 import io
 import struct
 import sys
@@ -80,15 +81,25 @@ def write_ico(path: str, images: list) -> None:
         f.write(header + entries + b"".join(pngs))
 
 
+def paused(im: Image.Image) -> Image.Image:
+    r, g, b, a = im.split()
+    gray = Image.merge("RGB", (r, g, b)).convert("L")
+    gray = gray.point(lambda v: int(96 + v * 0.55))  # lift and flatten: reads as "inactive"
+    a = a.point(lambda v: int(v * 0.8))
+    return Image.merge("RGBA", (gray, gray, gray, a))
+
+
 if __name__ == "__main__":
     imgs = [draw(n) for n in SIZES]
     write_ico("assets/best_loupe.ico", imgs)
+    write_ico("assets/best_loupe_paused.ico", [paused(im) for im in imgs])
     if len(sys.argv) < 2:
         sys.exit(0)
     # Optional preview strip on light and dark backgrounds.
-    strip = Image.new("RGBA", (sum(SIZES) + 10 * len(SIZES), 2 * 266), (0, 0, 0, 0))
+    strip = Image.new("RGBA", (sum(SIZES) + sum(SIZES[:5]) + 10 * (len(SIZES) + 5), 2 * 266), (0, 0, 0, 0))
     x = 0
-    for n, im in zip(SIZES, imgs):
+    imgs = imgs[:5] + [paused(im) for im in imgs[:5]] + imgs[5:]
+    for n, im in zip(SIZES[:5] * 2 + SIZES[5:], imgs):
         for row, bg in enumerate(((243, 243, 243, 255), (32, 32, 32, 255))):
             tile = Image.new("RGBA", (n + 10, 266), bg)
             tile.alpha_composite(im, (5, 5))

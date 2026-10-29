@@ -8,6 +8,16 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Extra modifier that, held together with the hotkey, freezes the picture in the lens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FreezeKey {
+    None,
+    Shift,
+    Ctrl,
+    Alt,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -39,6 +49,11 @@ pub struct Config {
     pub hotkey_ctrl: bool,
     pub hotkey_alt: bool,
     pub hotkey_shift: bool,
+    /// Hold this too (with the hotkey) to freeze the lens picture, e.g. to read tooltips that
+    /// vanish when the mouse moves. Must not be part of the hotkey.
+    pub freeze_key: FreezeKey,
+    /// Border colour while the picture is frozen, sRGB 0xRRGGBB.
+    pub freeze_border_color: u32,
     /// Periodically check GitHub releases of `update_repo` for a newer version.
     pub check_updates: bool,
     /// GitHub `owner/name` whose releases are checked.
@@ -65,6 +80,8 @@ impl Default for Config {
             hotkey_ctrl: true,
             hotkey_alt: true,
             hotkey_shift: false,
+            freeze_key: FreezeKey::Shift,
+            freeze_border_color: 0x3d8bfd,
             check_updates: true,
             update_repo: "artyfarty/best_loupe".into(),
         }
@@ -90,6 +107,16 @@ impl Config {
         if !(self.hotkey_ctrl || self.hotkey_alt || self.hotkey_shift) {
             self.hotkey_ctrl = true;
             self.hotkey_alt = true;
+        }
+        self.freeze_border_color &= 0xff_ffff;
+        let clash = match self.freeze_key {
+            FreezeKey::Shift => self.hotkey_shift,
+            FreezeKey::Ctrl => self.hotkey_ctrl,
+            FreezeKey::Alt => self.hotkey_alt,
+            FreezeKey::None => false,
+        };
+        if clash {
+            self.freeze_key = FreezeKey::None;
         }
         self
     }

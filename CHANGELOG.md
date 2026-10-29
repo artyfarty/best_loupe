@@ -4,6 +4,16 @@ Versions follow [SemVer](https://semver.org/); each release is a git tag `vX.Y.Z
 `Cargo.toml`. The version and the exact `git describe` are burned into the exe (VERSIONINFO
 resource, log, tray tooltip).
 
+## v0.3.0 — 2026-10-29
+
+- Freeze frame: hold the freeze key (Shift by default, selectable in settings) together with the
+  hotkey — the lens keeps a still picture while following the cursor and zooming, e.g. to read
+  tooltips that vanish when the mouse moves. A frozen lens has a blue border.
+- Tray menu: "Pause the lens" (greyed tray icon while paused; not persisted).
+- `best_loupe.exe --quit` stops a running instance gracefully (the installed uiAccess copy cannot
+  be killed from a normal process); the installer uses it before upgrading.
+- Fix: modifiers released over an elevated window could stay "stuck" in the hotkey state.
+
 ## v0.2.0 — 2026-10-24
 
 First public release.

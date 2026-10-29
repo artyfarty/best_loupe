@@ -31,6 +31,10 @@ const MSG_MOUSE_HOOK_OFF: u32 = WM_APP + 2;
 static MODS: AtomicU32 = AtomicU32::new(0);
 /// Modifier groups (CTRL_MASK | ALT_MASK | SHIFT_MASK subsets) that make up the hotkey.
 static REQUIRED: AtomicU32 = AtomicU32::new(CTRL_MASK | ALT_MASK);
+/// Extra modifier group that freezes the lens picture while held on top of the hotkey (0 = off).
+static FREEZE: AtomicU32 = AtomicU32::new(SHIFT_MASK);
+/// Tray "pause": while false the hotkey does nothing.
+static ENABLED: AtomicBool = AtomicBool::new(true);
 /// Another key was pressed while the chord was held; cleared when Ctrl or Alt is fully released.
 static TAINTED: AtomicBool = AtomicBool::new(false);
 /// A wheel event arrived during the chord: skip the activation delay.
@@ -62,15 +66,39 @@ pub fn apply_config(cfg: &crate::config::Config) {
     if cfg.hotkey_shift {
         req |= SHIFT_MASK;
     }
+    let freeze = match cfg.freeze_key {
+        crate::config::FreezeKey::Shift => SHIFT_MASK,
+        crate::config::FreezeKey::Ctrl => CTRL_MASK,
+        crate::config::FreezeKey::Alt => ALT_MASK,
+        crate::config::FreezeKey::None => 0,
+    };
     let before = chord_held();
+    FREEZE.store(freeze & !req, Release);
     REQUIRED.store(req, Release);
     TAINTED.store(false, Release);
     on_chord_change(before);
 }
 
-/// The hotkey modifiers are all down and no other key was pressed since.
+/// The hotkey modifiers are all down, no other key was pressed since, and the lens is not paused.
 pub fn chord_held() -> bool {
-    mods_held(MODS.load(Acquire)) && !TAINTED.load(Acquire)
+    ENABLED.load(Acquire) && mods_held(MODS.load(Acquire)) && !TAINTED.load(Acquire)
+}
+
+/// The hotkey is held together with the freeze modifier: show a still picture.
+pub fn frozen() -> bool {
+    let freeze = FREEZE.load(Acquire);
+    freeze != 0 && MODS.load(Acquire) & freeze != 0 && chord_held()
+}
+
+pub fn enabled() -> bool {
+    ENABLED.load(Acquire)
+}
+
+/// Tray "pause": a paused lens ignores the hotkey (and installs no mouse hook). Not persisted.
+pub fn set_enabled(on: bool) {
+    let before = chord_held();
+    ENABLED.store(on, Release);
+    on_chord_change(before);
 }
 
 pub fn chord_since_ms() -> u64 {
@@ -131,8 +159,9 @@ pub fn verify_with_async_state() -> bool {
             m &= !mask;
         }
     }
+    // Clear every modifier that is physically up (also a stale freeze modifier).
+    MODS.fetch_and(m | !(CTRL_MASK | ALT_MASK | SHIFT_MASK), AcqRel);
     if !mods_held(m) {
-        MODS.store(m, Release);
         TAINTED.store(false, Release);
         on_chord_change(before);
     }
@@ -155,13 +184,15 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         };
         let before = chord_held();
         let required = REQUIRED.load(Acquire);
+        let freeze = FREEZE.load(Acquire);
         if bit != 0 {
             let held_before = mods_held(MODS.load(Acquire));
             let m = if down { MODS.fetch_or(bit, AcqRel) | bit } else { MODS.fetch_and(!bit, AcqRel) & !bit };
             if !mods_held(m) {
                 TAINTED.store(false, Release);
-            } else if down && held_before && GROUPS.iter().any(|&g| g & bit != 0 && required & g == 0) {
-                // A modifier that is not part of the hotkey (e.g. Shift with Ctrl+Alt): a shortcut.
+            } else if down && held_before && GROUPS.iter().any(|&g| g & bit != 0 && required & g == 0 && freeze & g == 0) {
+                // A modifier that is neither the hotkey nor the freeze key (e.g. Shift with Ctrl+Alt
+                // when freeze is off): a shortcut.
                 TAINTED.store(true, Release);
             }
         } else if down && mods_held(MODS.load(Acquire)) {

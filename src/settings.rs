@@ -16,7 +16,7 @@ use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{HSTRING, PCWSTR, PWSTR, w};
 
-use crate::config::{self, Config};
+use crate::config::{self, Config, FreezeKey};
 use crate::i18n::{self, Strings, t};
 use crate::update::{self, Status};
 
@@ -37,6 +37,7 @@ const ID_CHK_ALT: i32 = 402;
 const ID_CHK_SHIFT: i32 = 403;
 const ID_CHK_AUTOSTART: i32 = 404;
 const ID_CHK_UPDATES: i32 = 405;
+const ID_CMB_FREEZE: i32 = 406;
 const ID_BTN_COLOR: i32 = 500;
 const ID_BTN_OPEN_CONFIG: i32 = 502;
 const ID_BTN_RESET: i32 = 503;
@@ -51,7 +52,7 @@ const UI_SCALE: f32 = 1.5;
 
 /// Client size of the window, in DIPs (before `UI_SCALE`).
 const CLIENT_W: i32 = 560;
-const CLIENT_H: i32 = 400;
+const CLIENT_H: i32 = 470;
 
 struct Slider {
     tab: usize,
@@ -187,6 +188,7 @@ struct Ui {
     checks: Vec<(i32, HWND)>,
     swatch: HWND,
     swatch_brush: HBRUSH,
+    freeze_combo: HWND,
     howto: HWND,
     upd_status: HWND,
     btn_download: HWND,
@@ -432,7 +434,7 @@ unsafe fn build(hwnd: HWND, dpi: u32, icons: Vec<HICON>) -> Ui {
         });
 
         // Slider rows: label | trackbar | value. The General page starts below the hotkey block.
-        let mut rows = [16, 16, 92, 16];
+        let mut rows = [16, 16, 172, 16];
         let mut slider_handles = Vec::new();
         for (i, sl) in sliders().iter().enumerate() {
             let page = pages[sl.tab];
@@ -466,6 +468,13 @@ unsafe fn build(hwnd: HWND, dpi: u32, icons: Vec<HICON>) -> Ui {
         checks.push((ID_CHK_ALT, b.checkbox(general, "Alt", 276, 18, 70, ID_CHK_ALT)));
         checks.push((ID_CHK_SHIFT, b.checkbox(general, "Shift", 352, 18, 80, ID_CHK_SHIFT)));
         b.label(general, s.hotkey_hint, 16, 52, 510, 20);
+        b.label(general, s.freeze_key, 16, 89, 180, 20);
+        let freeze_combo = b.child(general, WC_COMBOBOXW, "", CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | WS_TABSTOP.0, 200, 84, 160, 200, ID_CMB_FREEZE);
+        for item in [s.freeze_off, "Shift", "Ctrl", "Alt"] {
+            let text = wide(item);
+            send(freeze_combo, CB_ADDSTRING, 0, text.as_ptr() as isize);
+        }
+        b.label(general, s.freeze_hint, 16, 120, 510, 44);
         let mut y = rows[2];
         checks.push((ID_CHK_AUTOSTART, b.checkbox(general, s.autostart, 16, y + 4, 500, ID_CHK_AUTOSTART)));
         y += 30;
@@ -503,6 +512,7 @@ unsafe fn build(hwnd: HWND, dpi: u32, icons: Vec<HICON>) -> Ui {
             checks,
             swatch,
             swatch_brush: HBRUSH::default(),
+            freeze_combo,
             howto,
             upd_status,
             btn_download,
@@ -567,6 +577,13 @@ fn sync_controls() {
         };
         send(h, BM_SETCHECK, if on { BST_CHECKED.0 as usize } else { BST_UNCHECKED.0 as usize }, 0);
     }
+    let freeze_index = match cfg.freeze_key {
+        FreezeKey::None => 0,
+        FreezeKey::Shift => 1,
+        FreezeKey::Ctrl => 2,
+        FreezeKey::Alt => 3,
+    };
+    send(u.freeze_combo, CB_SETCURSEL, freeze_index, 0);
     let hotkey = i18n::hotkey_label(&cfg);
     set_text(u.howto, &t().howto.replace("{hotkey}", &hotkey));
     refresh_swatch(&cfg);
@@ -654,6 +671,16 @@ fn on_command(id: i32, ctl: HWND) {
                     c.hotkey_shift = cfg.hotkey_shift;
                 });
             }
+        }
+        ID_CMB_FREEZE => {
+            let key = match send(ctl, CB_GETCURSEL, 0, 0).0 {
+                1 => FreezeKey::Shift,
+                2 => FreezeKey::Ctrl,
+                3 => FreezeKey::Alt,
+                _ => FreezeKey::None,
+            };
+            // A key that is part of the hotkey cannot freeze; sanitize turns it off (shown on sync).
+            config::update(|c| c.freeze_key = key);
         }
         ID_BTN_COLOR => choose_color(),
         ID_BTN_OPEN_CONFIG => {
@@ -748,7 +775,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             WM_COMMAND => {
                 let id = (wparam.0 & 0xffff) as i32;
                 let code = ((wparam.0 >> 16) & 0xffff) as u32;
-                if code == BN_CLICKED {
+                if code == BN_CLICKED || (id == ID_CMB_FREEZE && code == CBN_SELCHANGE) {
                     on_command(id, HWND(lparam.0 as *mut _));
                 }
                 LRESULT(0)

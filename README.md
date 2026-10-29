@@ -23,6 +23,9 @@ position. The lens itself never lags the cursor; its content is at most one fram
 - Costs nothing while idle: no capture, no overlay, no mouse hook until Ctrl+Alt is held — games
   keep their independent-flip fast path.
 - Ctrl+Alt+<other key> shortcuts do not flash the lens.
+- Add Shift while holding the hotkey to **freeze** the picture: the lens keeps following the
+  cursor over a still image — read tooltips and other things that vanish when the mouse moves.
+- Pause/resume from the tray menu.
 - Rounded lens with border and soft shadow; size, rounding, border, zoom steps, animation,
   smoothing, hotkey — all live-adjustable in a large-print settings window (English / Russian).
 - Checks GitHub releases for updates (can be turned off).

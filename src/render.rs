@@ -465,6 +465,7 @@ pub fn run(wake: HANDLE) {
     let mut cfg = config::current();
     let mut anim = Animator { zoom_target: cfg.initial_zoom, zoom: cfg.initial_zoom, alpha: 0.0, last: Instant::now() };
     let mut frames: u64 = 0;
+    let mut was_frozen = false;
     let mut stats_since = Instant::now();
 
     loop {
@@ -553,7 +554,14 @@ pub fn run(wake: HANDLE) {
             continue;
         }
 
-        if let Err(e) = l.capture(0) {
+        // Frozen: keep the last desktop image (the lens still follows the cursor and zooms), so
+        // tooltips and other things that vanish on mouse move can be read.
+        let frozen = input::frozen();
+        if frozen != was_frozen {
+            log!("lens: {}", if frozen { "frozen" } else { "live" });
+            was_frozen = frozen;
+        }
+        if !frozen && let Err(e) = l.capture(0) {
             log!("lens: capture error {e}, rebuilding");
             lens = None;
             active = false;
@@ -592,8 +600,9 @@ pub fn run(wake: HANDLE) {
         let c = Constants {
             lens: [x0, y0, x0 + lw, y0 + lh],
             cursor_zoom: [cx, cy, anim.zoom, anim.alpha],
-            style: [cfg.corner_radius, cfg.border_width, cfg.shadow_size, 0.0],
-            border_rgb: srgb_to_floats(cfg.border_color),
+            // A frozen picture is marked by its own border colour (and a border even if disabled).
+            style: [cfg.corner_radius, if frozen { cfg.border_width.max(3.0) } else { cfg.border_width }, cfg.shadow_size, 0.0],
+            border_rgb: srgb_to_floats(if frozen { cfg.freeze_border_color } else { cfg.border_color }),
             viewport: [w, h, 1.0 / w, 1.0 / h],
         };
         if let Err(e) = l.render(&c) {

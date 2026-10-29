@@ -29,6 +29,12 @@ fn main() {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
+    if std::env::args().any(|a| a == "--quit") {
+        // Used by scripts and the installer: stop the running instance gracefully.
+        tray::quit_running_instance();
+        return;
+    }
+
     let _mutex = unsafe { CreateMutexW(None, true, w!("Local\\best_loupe_single_instance")) };
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
         // Launching it again (e.g. from the Start menu) opens the running instance's settings.
