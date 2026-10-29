@@ -1,4 +1,6 @@
 # Build + test on every push / PR; on a vX.Y.Z tag also publish the GitHub release.
+# `git push github main vX.Y.Z` fires two push events for the same commit; the branch run is
+# skipped by the `gate` job when the commit carries a release tag (the tag run builds it).
 # Third-party actions are pinned to commit SHAs; tool downloads are pinned by version + SHA256.
 name: build
 
@@ -18,7 +20,28 @@ env:
   INNO_SHA256: "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - id: check
+        run: |
+          tags="$(git tag --points-at "$GITHUB_SHA" --list 'v*')"
+          if [[ "$GITHUB_REF" == refs/heads/* && -n "$tags" ]]; then
+            echo "commit is tagged ($tags): the tag run builds it, skipping"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
     runs-on: windows-latest
     permissions:
       contents: write # release creation on tags

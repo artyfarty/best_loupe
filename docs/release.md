@@ -4,7 +4,11 @@ Source of truth: `Cargo.toml` `version` + annotated tag `vX.Y.Z` (see CLAUDE.md 
 
 ## CI (`.github/workflows/build.yml`)
 
-Runs on every push to `main`, every PR and every `v*` tag, on `windows-latest`:
+Runs on every push to `main`, every PR and every `v*` tag, on `windows-latest`. Pushing a branch
+and its release tag together fires two push events for one commit: a tiny `gate` job (ubuntu)
+skips the branch run's build when the commit already carries a `v*` tag — the tag run builds and
+publishes it. (Not `concurrency` cancellation: both runs start at once and the one cancelled could
+be the publishing one.) Build steps:
 
 1. Rust toolchain pinned (`RUST_TOOLCHAIN`), `cargo test --release --locked`.
 2. Portable build (`--target-dir target/portable`) and uiAccess build (`--features uiaccess
